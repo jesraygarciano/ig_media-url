@@ -10,12 +10,12 @@ export class DownloadController {
 
   @Post()
   @ApiOperation({ summary: 'Download media from Instagram' })
-  @ApiResponse({ status: 200, description: 'Media URL retrieved successfully.' })
+  @ApiResponse({ status: 200, description: 'Media URLs retrieved successfully.' })
   @ApiResponse({ status: 404, description: 'Media not found.' })
   @ApiResponse({ status: 500, description: 'Failed to fetch media.' })
   @ApiBody({ type: DownloadDto })
   async download(@Body() downloadDto: DownloadDto) {
-    const mediaUrl = await this.downloadService.getMediaUrl(downloadDto.url);
-    return { mediaUrl };
+    const mediaUrls = await this.downloadService.getMediaUrls(downloadDto.url);
+    return { mediaUrls };
   }
 }

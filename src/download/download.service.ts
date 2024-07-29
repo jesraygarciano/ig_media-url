@@ -7,7 +7,7 @@ import { CheerioAPI } from 'cheerio';
 export class DownloadService {
   private readonly logger = new Logger(DownloadService.name);
 
-  async getMediaUrl(instagramUrl: string): Promise<string> {
+  async getMediaUrls(instagramUrl: string): Promise<string[]> {
     try {
       this.logger.log(`Fetching URL: ${instagramUrl}`);
       const response = await axios.get(instagramUrl);
@@ -16,37 +16,46 @@ export class DownloadService {
       // Log the HTML content for debugging
       this.logger.debug(`HTML Content: ${response.data}`);
 
-      // Try to find the media URL in different structures
-      let mediaUrl = this.extractMediaUrlFromJsonLd($);
-      if (!mediaUrl) {
-        mediaUrl = this.extractMediaUrlFromGraphQl($);
+      // Try to find the media URLs in different structures
+      let mediaUrls = this.extractMediaUrlsFromJsonLd($);
+      if (!mediaUrls.length) {
+        mediaUrls = this.extractMediaUrlsFromGraphQl($);
+      }
+      if (!mediaUrls.length) {
+        mediaUrls = this.extractMediaUrlsFromOgTags($);
       }
 
-      if (!mediaUrl) {
+      if (!mediaUrls.length) {
         throw new HttpException('Media not found', HttpStatus.NOT_FOUND);
       }
 
-      return mediaUrl;
+      return mediaUrls;
     } catch (error) {
       this.logger.error(`Failed to fetch media: ${error.message}`, error.stack);
       throw new HttpException('Failed to fetch media', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
-  private extractMediaUrlFromJsonLd($: CheerioAPI): string | null {
+  private extractMediaUrlsFromJsonLd($: CheerioAPI): string[] {
     try {
       const scriptTag = $('script[type="application/ld+json"]').html();
       if (scriptTag) {
         const json = JSON.parse(scriptTag);
-        return json.video?.contentUrl || json.image;
+        const mediaUrls = [];
+        if (json.video && json.video.contentUrl) {
+          mediaUrls.push(json.video.contentUrl);
+        } else if (json.image) {
+          mediaUrls.push(json.image);
+        }
+        return mediaUrls;
       }
     } catch (error) {
-      this.logger.warn(`Failed to extract media URL from JSON-LD: ${error.message}`);
+      this.logger.warn(`Failed to extract media URLs from JSON-LD: ${error.message}`);
     }
-    return null;
+    return [];
   }
 
-  private extractMediaUrlFromGraphQl($: CheerioAPI): string | null {
+  private extractMediaUrlsFromGraphQl($: CheerioAPI): string[] {
     try {
       const scriptTag = $('script[type="text/javascript"]').filter((i, el) => {
         return $(el).html().includes('window._sharedData');
@@ -55,17 +64,43 @@ export class DownloadService {
       if (scriptTag) {
         const json = JSON.parse(scriptTag.replace('window._sharedData = ', '').slice(0, -1));
         const media = json.entry_data.PostPage[0].graphql.shortcode_media;
+        const mediaUrls = [];
+
         if (media.__typename === 'GraphImage') {
-          return media.display_url;
+          mediaUrls.push(media.display_url);
         } else if (media.__typename === 'GraphVideo') {
-          return media.video_url;
+          mediaUrls.push(media.video_url);
         } else if (media.__typename === 'GraphSidecar') {
-          return media.edge_sidecar_to_children.edges[0].node.display_url;
+          media.edge_sidecar_to_children.edges.forEach((edge: any) => {
+            if (edge.node.__typename === 'GraphImage') {
+              mediaUrls.push(edge.node.display_url);
+            } else if (edge.node.__typename === 'GraphVideo') {
+              mediaUrls.push(edge.node.video_url);
+            }
+          });
         }
+        return mediaUrls;
       }
     } catch (error) {
-      this.logger.warn(`Failed to extract media URL from GraphQL: ${error.message}`);
+      this.logger.warn(`Failed to extract media URLs from GraphQL: ${error.message}`);
     }
-    return null;
+    return [];
+  }
+
+  private extractMediaUrlsFromOgTags($: CheerioAPI): string[] {
+    try {
+      const ogImage = $('meta[property="og:image"]').attr('content');
+      const ogVideo = $('meta[property="og:video"]').attr('content');
+      const mediaUrls = [];
+      if (ogVideo) {
+        mediaUrls.push(ogVideo);
+      } else if (ogImage) {
+        mediaUrls.push(ogImage);
+      }
+      return mediaUrls;
+    } catch (error) {
+      this.logger.warn(`Failed to extract media URLs from OG tags: ${error.message}`);
+    }
+    return [];
   }
 }
