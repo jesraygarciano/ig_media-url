@@ -24,6 +24,9 @@ export class DownloadService {
       if (!mediaUrls.length) {
         mediaUrls = this.extractMediaUrlsFromOgTags($);
       }
+      if (!mediaUrls.length) {
+        mediaUrls = this.extractMediaUrlsFromImgTags($);
+      }
 
       if (!mediaUrls.length) {
         throw new HttpException('Media not found', HttpStatus.NOT_FOUND);
@@ -100,6 +103,29 @@ export class DownloadService {
       return mediaUrls;
     } catch (error) {
       this.logger.warn(`Failed to extract media URLs from OG tags: ${error.message}`);
+    }
+    return [];
+  }
+
+  private extractMediaUrlsFromImgTags($: CheerioAPI): string[] {
+    try {
+      const mediaUrls = [];
+      $('img[style="object-fit: cover;"][crossorigin="anonymous"]').each((i, el) => {
+        const srcset = $(el).attr('srcset');
+        if (srcset) {
+          const urls = srcset.split(',').map((url) => url.trim().split(' ')[0]);
+          const highestResUrl = urls[urls.length - 1];
+          mediaUrls.push(highestResUrl);
+        } else {
+          const src = $(el).attr('src');
+          if (src) {
+            mediaUrls.push(src);
+          }
+        }
+      });
+      return mediaUrls;
+    } catch (error) {
+      this.logger.warn(`Failed to extract media URLs from img tags: ${error.message}`);
     }
     return [];
   }
