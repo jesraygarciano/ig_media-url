@@ -17,15 +17,18 @@ export class DownloadService {
       this.logger.debug(`HTML Content: ${response.data}`);
 
       // Try to find the media URLs in different structures
-      let mediaUrls = this.extractMediaUrlsFromJsonLd($);
+      let mediaUrls = this.extractMediaUrlsFromGraphQl($);
       if (!mediaUrls.length) {
-        mediaUrls = this.extractMediaUrlsFromGraphQl($);
+        mediaUrls = this.extractMediaUrlsFromJsonLd($);
       }
       if (!mediaUrls.length) {
         mediaUrls = this.extractMediaUrlsFromOgTags($);
       }
       if (!mediaUrls.length) {
         mediaUrls = this.extractMediaUrlsFromImgTags($);
+      }
+      if (!mediaUrls.length) {
+        mediaUrls = this.extractMediaUrlsFromVideoTags($);
       }
 
       if (!mediaUrls.length) {
@@ -37,25 +40,6 @@ export class DownloadService {
       this.logger.error(`Failed to fetch media: ${error.message}`, error.stack);
       throw new HttpException('Failed to fetch media', HttpStatus.INTERNAL_SERVER_ERROR);
     }
-  }
-
-  private extractMediaUrlsFromJsonLd($: CheerioAPI): string[] {
-    try {
-      const scriptTag = $('script[type="application/ld+json"]').html();
-      if (scriptTag) {
-        const json = JSON.parse(scriptTag);
-        const mediaUrls = [];
-        if (json.video && json.video.contentUrl) {
-          mediaUrls.push(json.video.contentUrl);
-        } else if (json.image) {
-          mediaUrls.push(json.image);
-        }
-        return mediaUrls;
-      }
-    } catch (error) {
-      this.logger.warn(`Failed to extract media URLs from JSON-LD: ${error.message}`);
-    }
-    return [];
   }
 
   private extractMediaUrlsFromGraphQl($: CheerioAPI): string[] {
@@ -86,6 +70,25 @@ export class DownloadService {
       }
     } catch (error) {
       this.logger.warn(`Failed to extract media URLs from GraphQL: ${error.message}`);
+    }
+    return [];
+  }
+
+  private extractMediaUrlsFromJsonLd($: CheerioAPI): string[] {
+    try {
+      const scriptTag = $('script[type="application/ld+json"]').html();
+      if (scriptTag) {
+        const json = JSON.parse(scriptTag);
+        const mediaUrls = [];
+        if (json.video && json.video.contentUrl) {
+          mediaUrls.push(json.video.contentUrl);
+        } else if (json.image) {
+          mediaUrls.push(json.image);
+        }
+        return mediaUrls;
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to extract media URLs from JSON-LD: ${error.message}`);
     }
     return [];
   }
@@ -126,6 +129,22 @@ export class DownloadService {
       return mediaUrls;
     } catch (error) {
       this.logger.warn(`Failed to extract media URLs from img tags: ${error.message}`);
+    }
+    return [];
+  }
+
+  private extractMediaUrlsFromVideoTags($: CheerioAPI): string[] {
+    try {
+      const mediaUrls = [];
+      $('video').each((i, el) => {
+        const src = $(el).attr('src');
+        if (src) {
+          mediaUrls.push(src);
+        }
+      });
+      return mediaUrls;
+    } catch (error) {
+      this.logger.warn(`Failed to extract media URLs from video tags: ${error.message}`);
     }
     return [];
   }
